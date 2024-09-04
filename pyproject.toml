@@ -1,0 +1,18 @@
+[project]
+name = "network-idps-closed-loop"
+version = "0.1.0"
+description = "Closed-loop network IDPS: real tshark/Suricata detection, automated iptables response, capture-based verification"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["idps*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 115
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

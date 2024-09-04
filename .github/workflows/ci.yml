@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install tshark + suricata
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark suricata
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest --cov=idps --cov-report=term-missing
+
+  closed-loop-demo:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sandbox images
+        run: docker compose build
+
+      - name: Run the real closed loop (detect -> block -> verify)
+        run: |
+          mkdir -p output
+          docker compose up --abort-on-container-exit --exit-code-from sensor
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
+      - name: Fix output ownership
+        # The sensor container writes output/ as root; the runner user needs
+        # read access to zip it for upload.
+        if: always()
+        run: sudo chown -R $(whoami) output/ || true
+
+      - name: Upload incident report + evidence visuals
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: closed-loop-output
+          path: output/

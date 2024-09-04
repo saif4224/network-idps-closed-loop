@@ -1,0 +1,33 @@
+services:
+  victim:
+    build:
+      context: .
+      dockerfile: containers/victim/Dockerfile
+    # No ports published to the host - reachable only within this isolated
+    # compose network, and only by the attacker/sensor containers below.
+
+  attacker:
+    build:
+      context: .
+      dockerfile: containers/attacker/Dockerfile
+    depends_on:
+      - victim
+
+  sensor:
+    build:
+      context: .
+      dockerfile: containers/sensor/Dockerfile
+    # Shares the victim's network namespace: this is what lets the sensor's
+    # tshark capture see the victim's real traffic, and its iptables rules
+    # apply to the victim's real network stack - the mechanism the whole
+    # closed loop depends on.
+    network_mode: "service:victim"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - victim
+      - attacker
+    volumes:
+      - ./output:/app/output
+    command: ["--demo", "--output-dir", "/app/output"]
