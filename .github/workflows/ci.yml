@@ -53,6 +53,12 @@ jobs:
         if: always()
         run: docker compose down
 
+      - name: Fix output ownership
+        # The sensor container writes output/ as root; the runner user needs
+        # read access to zip it for upload.
+        if: always()
+        run: sudo chown -R $(whoami) output/ || true
+
       - name: Upload incident report + evidence visuals
         if: always()
         uses: actions/upload-artifact@v4
