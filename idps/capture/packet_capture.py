@@ -104,7 +104,25 @@ class PacketCapture:
         return packets
 
     def capture_to_file(self, interface: str, out_path: str | Path, duration_seconds: int) -> subprocess.Popen:
-        """Starts a background tshark capture, returns the running process."""
+        """Starts a background tshark capture, returns the running process.
+
+        stderr is redirected to `<out_path>.stderr.log` (not swallowed):
+        if the capture process dies early - e.g. no permission to open the
+        interface - `wait_for_capture` surfaces that log instead of letting
+        the caller stumble into a confusing downstream "file not found"
+        error from read_pcap_file.
+        """
         cmd = [self.tshark_path, "-i", interface, "-a", f"duration:{duration_seconds}", "-w", str(out_path)]
         logger.info("Starting background capture: %s", " ".join(cmd))
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stderr_path = Path(f"{out_path}.stderr.log")
+        stderr_file = stderr_path.open("w")
+        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=stderr_file)
+
+    def wait_for_capture(self, proc: subprocess.Popen, out_path: str | Path, timeout: int) -> None:
+        proc.wait(timeout=timeout)
+        if proc.returncode != 0:
+            stderr_path = Path(f"{out_path}.stderr.log")
+            stderr_text = stderr_path.read_text() if stderr_path.exists() else "(no stderr captured)"
+            raise RuntimeError(
+                f"tshark capture to {out_path} exited with code {proc.returncode}:\n{stderr_text}"
+            )

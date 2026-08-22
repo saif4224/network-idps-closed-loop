@@ -68,7 +68,7 @@ def run_closed_loop(
     time.sleep(1)  # let tshark attach to the interface before traffic starts
     attacker.trigger_scan(target, ports, repeat_after_seconds=burst_gap_seconds)
     trigger_time = time.time()
-    before_proc.wait(timeout=capture_duration + 15)
+    capture.wait_for_capture(before_proc, before_path, timeout=capture_duration + 15)
 
     before_packets = capture.read_pcap_file(before_path)
     detections = detect_port_scans(before_packets, port_threshold, window_seconds)
@@ -96,7 +96,7 @@ def run_closed_loop(
 
         after_path = output_dir / "capture_after.pcap"
         after_proc = capture.capture_to_file(interface, after_path, capture_duration)
-        after_proc.wait(timeout=capture_duration + 15)
+        capture.wait_for_capture(after_proc, after_path, timeout=capture_duration + 15)
 
         after_packets = capture.read_pcap_file(after_path)
         verification_after = verify_from_capture(after_packets, "after_block", attacker_ip, target_ip, ports)
