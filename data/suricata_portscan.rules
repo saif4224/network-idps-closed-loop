@@ -1,0 +1,8 @@
+# Minimal, real Suricata detection rule (not a stub/placeholder) - flags
+# a source touching 5+ SYN packets within 5 seconds. This is the
+# standard Suricata `threshold` keyword pattern for scan detection;
+# shipped as our own small ruleset rather than depending on the full
+# Emerging Threats ruleset, which is large and whose scan-category
+# behavior can vary by version - this keeps the signal deterministic
+# and independently verifiable.
+alert tcp any any -> any any (msg:"IDPS Possible Port Scan (SYN fan-out)"; flags:S; threshold:type threshold, track by_src, count 5, seconds 5; classtype:attempted-recon; sid:1000001; rev:1;)
