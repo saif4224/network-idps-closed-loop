@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import socket
+import tempfile
 import time
 from pathlib import Path
 
@@ -55,6 +57,18 @@ def run_closed_loop(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # dumpcap (the capture helper tshark shells out to) drops root privileges
+    # after opening the raw capture socket but *before* opening the output
+    # file, as a security hardening measure - so it can fail to write into a
+    # root-owned output_dir (e.g. a CI-mounted volume) even though the
+    # capturing process itself started as root. Capture straight into /tmp
+    # instead - reliably world-writable (mode 1777) on any Linux system,
+    # unlike a freshly mkdtemp'd subdirectory (mode 0700, same problem one
+    # level down) - then copy the results into output_dir afterwards, a
+    # plain file copy done by this (still-root) process, not subject to the
+    # same restriction.
+    capture_dir = Path(tempfile.gettempdir())
+
     capture = PacketCapture()
     attacker = AttackerClient(attacker_url)
     firewall = firewall or Firewall()
@@ -63,7 +77,7 @@ def run_closed_loop(
     # verification can match captured traffic against the actual address.
     target_ip = socket.gethostbyname(target)
     logger.info("Phase 1/2: capturing baseline scan against %s (%s)", target, target_ip)
-    before_path = output_dir / "capture_before.pcap"
+    before_path = capture_dir / "capture_before.pcap"
     before_proc = capture.capture_to_file(interface, before_path, capture_duration)
     time.sleep(1)  # let tshark attach to the interface before traffic starts
     attacker.trigger_scan(target, ports, repeat_after_seconds=burst_gap_seconds)
@@ -94,7 +108,7 @@ def run_closed_loop(
         if sleep_needed > 0:
             time.sleep(sleep_needed)
 
-        after_path = output_dir / "capture_after.pcap"
+        after_path = capture_dir / "capture_after.pcap"
         after_proc = capture.capture_to_file(interface, after_path, capture_duration)
         capture.wait_for_capture(after_proc, after_path, timeout=capture_duration + 15)
 
@@ -118,5 +132,11 @@ def run_closed_loop(
     plot_verification_comparison(
         verification_before, verification_after, output_dir / "verification_comparison.png"
     )
+
+    for pcap_path in (before_path, after_path if detections else None):
+        if pcap_path and pcap_path.exists():
+            shutil.copy2(pcap_path, output_dir / pcap_path.name)
+            pcap_path.unlink()
+            Path(f"{pcap_path}.stderr.log").unlink(missing_ok=True)
 
     return report_dict
