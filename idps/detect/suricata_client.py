@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import tempfile
 from datetime import datetime
@@ -24,6 +25,15 @@ from idps.models import SuricataAlert
 logger = logging.getLogger(__name__)
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parents[2] / "data" / "suricata_portscan.rules"
+
+# Suricata's eve.json timestamps use a UTC offset with no colon (e.g. "+0000"),
+# which datetime.fromisoformat() only started accepting in Python 3.11 - insert
+# the colon so this parses identically on 3.10 too.
+_OFFSET_NO_COLON = re.compile(r"([+-]\d{2})(\d{2})$")
+
+
+def _parse_suricata_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(_OFFSET_NO_COLON.sub(r"\1:\2", value))
 
 
 class SuricataClient:
@@ -60,7 +70,7 @@ class SuricataClient:
                     src_ip=event["src_ip"],
                     dst_ip=event["dest_ip"],
                     dst_port=event.get("dest_port", 0),
-                    timestamp=datetime.fromisoformat(event["timestamp"]),
+                    timestamp=_parse_suricata_timestamp(event["timestamp"]),
                 )
             )
         return alerts
